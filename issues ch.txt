@@ -1,0 +1,3 @@
+- skill Screen is floating 
+- on home page skill field should be on 1st and map address should be on 2nd 
+- dropdown issue in skill_order 

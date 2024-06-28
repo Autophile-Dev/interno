@@ -1,0 +1,74 @@
+<========index.js========>
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+require('dotenv').config();
+const userRoutes = require('./routes/users');
+const app = express();
+const port = process.env.PORT;
+const mongodbURI = process.env.MONGODB_URI;
+
+// Middleware to parse incoming JSON data
+app.use(cors());
+app.use(express.json());
+
+// Connect to MONGODB
+mongoose.connect(mongodbURI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+
+}).then(() => {
+    console.log('Connected to MongoDB');
+}).catch((err) => {
+    console.log('MongoDB connection error:', err);
+});
+
+app.use('/auth/users', userRoutes);
+app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+});
+
+<===========.env:============>
+MONGODB_URI=mongodb+srv://callportal:uC6nVLTp81AIZYhi@cluster1.wfaofvk.mongodb.net/
+PORT=8000
+JWT_SECRET=CALLWEBPORTAL
+
+users.js= routes
+router.post('/create-user', async (req, res) => {
+  try {
+    // Code to register a new user based on req.body
+    const { firstName, lastName, email, phoneNum, address, city, dob, password } = req.body;
+
+    // check if email exists or not 
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
+
+    // Remember to hash the password before saving it to the database
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+
+    // create a new user
+    const newUser = new User({
+      firstName,
+      lastName,
+      email,
+      phoneNum,
+      address,
+      city,
+      dob,
+      createdAt: new Date(),
+      password: hashedPassword,
+    });
+    await newUser.save();
+
+    // const token = jwt.sign({ _id: User._id }, process.env.JWT_SECRET);
+
+    return res.status(200).send({ User: newUser });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server Error' });
+  }
+});

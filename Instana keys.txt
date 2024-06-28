@@ -1,0 +1,4 @@
+--env="INSTANA_AGENT_ENDPOINT=ingress-green-saas.instana.io" \
+   --env="INSTANA_AGENT_ENDPOINT_PORT=443" \
+   --env="INSTANA_AGENT_KEY=8Bnt6En1TdaCrbzS1EjnZQ" \
+   --env="INSTANA_DOWNLOAD_KEY=8Bnt6En1TdaCrbzS1EjnZQ" \
