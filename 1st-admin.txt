@@ -1,0 +1,242 @@
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const Admin = require('../models/Admin');
+const nodemailer = require('nodemailer');
+const randomString = require('randomstring');
+const { google } = require('googleapis');
+require('dotenv').config();
+const generateToken = (userId) => {
+    return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '1h' }); // Token will expire after 1 hour
+};
+
+// Function to verify the token
+const verifyToken = (token) => {
+    return jwt.verify(token, process.env.JWT_SECRET);
+};
+// Create OAuth2 client
+const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URL
+);
+router.get('/auth/google', (req, res) => {
+    const url = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://mail.google.com/'],
+    });
+    res.redirect(url);
+});
+router.get('/oauth2callback', async (req, res) => {
+    const code = req.query.code;
+    try {
+        const { token } = await oauth2Client.getToken(code);
+        const refreshToken = tokens.refresh_token;
+        console.log('Refresh token:', refreshToken);
+
+        res.send('Authorization successful!');
+    } catch (error) {
+        console.error('Error exchanging code for tokens:', error);
+        res.status(500).send('Authorization error');
+    }
+});
+// Register New admin here
+router.post('/admin-register', async (req, res) => {
+    try {
+        // Code to register a new user based on req.body
+        const { firstName, lastName, email, phoneNum, dob, password } = req.body;
+
+        // check if email exists or not 
+        const existingUser = await Admin.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email already exists' });
+        }
+
+        // Remember to hash the password before saving it to the database
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+
+        // create a new admin
+        const newAdmin = new Admin({
+            firstName,
+            lastName,
+            email,
+            phoneNum,
+            dob,
+            password: hashedPassword,
+        });
+        await newAdmin.save();
+
+        // Send email to the user
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                type: 'OAuth2',
+                user: process.env.EMAIL_ADDRESS,
+                clientId: process.env.GOOGLE_CLIENT_ID,
+                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+                accessToken: oauth2Client.getAccessToken(),
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: email,
+            subject: 'Registration Confirmation',
+            text: `Dear ${firstName}, Thank you for registering!`,
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+            } else {
+                console.log('Email sent:', info.response);
+            }
+        });
+        res.status(201).json({ message: `Registration completed` });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server Error' });
+    }
+});
+const sendVerificationCode = async (email) => {
+    const code = randomString.generate({ length: 6, charset: 'numeric' });
+
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: 'chsahab488@gmail.com',
+            pass: 'rightpics123',
+        },
+    });
+
+    const mailOptions = {
+        from: 'chsahab488@gmail.com',
+        to: email,
+        subject: 'Password Reset Activation Code',
+        text: `Here is your activation code to reset password: ${code}`,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+
+        return code;
+
+    } catch (error) {
+        console.error('Error sending email:', error);
+        throw new Error('Failed to send verification code via email');
+    }
+};
+
+router.post('/send-verification-code', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const admin = await Admin.findOne({ email });
+        if (!admin) {
+            return res.status(404).json({ message: 'Admin not found' });
+        }
+        const verificationCode = await sendVerificationCode(email);
+        admin.verificationCode = verificationCode;
+        await admin.save();
+        res.status(200).json({ message: 'Verification code sent to email' });
+    }
+    catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+router.post('/admin-verify', async (req, res) => {
+    try {
+        const { email, code, newPassword } = req.body;
+        const admin = await Admin.findOne({ email });
+        if (!admin) {
+            return res.status(404).json({ message: 'Admin not found' });
+        }
+        if (admin.verificationCode !== code) {
+            return res.status(401).json({ message: 'Invalid verification code' });
+        }
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+        admin.password = hashedPassword;
+        admin.verificationCode = null;
+        await admin.save();
+
+        const token = generateToken(admin._id);
+        res.json({ token });
+    }
+    catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+// Login admin with authentication and web token
+router.post('/admin-login', async (req, res) => {
+    try {
+        // Perform user login and generate a JWT Token
+        const { email, password } = req.body;
+        // check if admin exists
+        const admin = await Admin.findOne({ email });
+        if (!admin) {
+            return res.status(401).json({ message: 'Invalid email' });
+        }
+        // compare password
+        const validPassword = await bcrypt.compare(password, admin.password);
+        if (!validPassword) {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+        // Create and send the JWT Token
+        const token = generateToken(admin._id);
+        res.json({ token });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server Error' });
+    }
+});
+router.get('/admin-register', async (req, res) => {
+    try {
+        // Verify the token before processing the request
+        const token = req.headers.authorization;
+        if (!token) {
+            return res.status(401).json({ message: 'Authorization token not found' });
+        }
+
+        try {
+            const decodedToken = verifyToken(token.split(' ')[1]);
+            const userId = decodedToken.userId;
+            // Fetch all admin data from the database
+            const allAdmins = await Admin.find();
+            res.status(200).json(allAdmins);
+        } catch (error) {
+            console.error(error);
+            res.status(401).json({ message: 'Invalid or expired token' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+//  Fetch data of the logged-in admin
+router.get('/admin-profile', async (req, res) => {
+    try {
+        const token = req.headers.authorization;
+        if (!token) {
+            return res.status(401).json({ message: 'Authorization token not found' });
+        }
+    } catch (error) {
+
+    }
+});
+
+
+module.exports = router;
+
+
+
+
+
+64ecd1e65c77fbb28edacd07
